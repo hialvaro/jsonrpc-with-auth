@@ -44,7 +44,7 @@ type RPCClient interface {
 	//   Call(ctx, "setPersonDetails", "Alex", 35, "Germany") -> {"method": "setPersonDetails", "params": ["Alex", 35, "Germany"}}
 	//
 	// for more information, see the examples or the unit tests
-	Call(ctx context.Context, method string, params ...interface{}) (*RPCResponse, error)
+	Call(ctx context.Context, method string, auth string, params ...interface{}) (*RPCResponse, error)
 
 	// CallRaw is like Call() but without magic in the requests.Params field.
 	// The RPCRequest object is sent exactly as you provide it.
@@ -66,7 +66,7 @@ type RPCClient interface {
 	// an error is returned. if it was an JSON-RPC error it can be casted
 	// to *RPCError.
 	//
-	CallFor(ctx context.Context, out interface{}, method string, params ...interface{}) error
+	CallFor(ctx context.Context, out interface{}, method string, auth string, params ...interface{}) error
 
 	// CallBatch invokes a list of RPCRequests in a single batch request.
 	//
@@ -158,6 +158,7 @@ type RPCRequest struct {
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params,omitempty"`
 	ID      int         `json:"id"`
+	Auth    string      `json:"auth,omitempty"`
 	JSONRPC string      `json:"jsonrpc"`
 }
 
@@ -347,13 +348,16 @@ func NewClientWithOpts(endpoint string, opts *RPCClientOpts) RPCClient {
 	return rpcClient
 }
 
-func (client *rpcClient) Call(ctx context.Context, method string, params ...interface{}) (*RPCResponse, error) {
+func (client *rpcClient) Call(ctx context.Context, method string, auth string, params ...interface{}) (*RPCResponse, error) {
 
 	request := &RPCRequest{
 		ID:      client.defaultRequestID,
 		Method:  method,
 		Params:  Params(params...),
 		JSONRPC: jsonrpcVersion,
+	}
+	if auth != "" {
+		request.Auth = auth
 	}
 
 	return client.doCall(ctx, request)
@@ -364,8 +368,8 @@ func (client *rpcClient) CallRaw(ctx context.Context, request *RPCRequest) (*RPC
 	return client.doCall(ctx, request)
 }
 
-func (client *rpcClient) CallFor(ctx context.Context, out interface{}, method string, params ...interface{}) error {
-	rpcResponse, err := client.Call(ctx, method, params...)
+func (client *rpcClient) CallFor(ctx context.Context, out interface{}, method string, auth string, params ...interface{}) error {
+	rpcResponse, err := client.Call(ctx, method, auth, params...)
 	if err != nil {
 		return err
 	}
@@ -519,7 +523,7 @@ func (client *rpcClient) doBatchCall(ctx context.Context, rpcRequest []*RPCReque
 	}
 
 	// response body empty
-	if rpcResponses == nil || len(rpcResponses) == 0 {
+	if len(rpcResponses) == 0 {
 		// if we have some http error, return it
 		if httpResponse.StatusCode >= 400 {
 			return nil, &HTTPError{
